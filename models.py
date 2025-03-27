@@ -36,38 +36,21 @@ class CentralServer:
 
             self.global_model.load_state_dict(global_params)
 
-    def fine_tune(self, dataloader, epochs=1, lr=0.001, device="cpu"):
-        optimizer = optim.AdamW(self.global_model.parameters(), lr=lr, weight_decay=1e-4)
-        scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.7)
-        criterion = nn.CrossEntropyLoss()
-
-        self.global_model.train()
-        for _ in range(epochs):
-            for images, labels in dataloader:
-                images, labels = images.to(device), labels.to(device)
-                optimizer.zero_grad()
-                outputs = self.global_model(images)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-            scheduler.step()
-
-
 class ClientServer:
     def __init__(self, global_model, device="cpu"):
         self.model = Model()
         self.model.load_state_dict(global_model.state_dict())
         self.model.to(device)
 
-    def train(self, dataloader, epochs=1, lr=0.001, device="cpu"):
+    def train(self, train_loader, epochs=1, lr=0.001, device="cpu"):
         self.model.to(device)
         optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-4)
         scheduler = lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.7)
         criterion = nn.CrossEntropyLoss()
 
         self.model.train()
-        for epoch in range(epochs):
-            for images, labels in dataloader:
+        for _ in range(epochs):
+            for images, labels in train_loader:
                 images, labels = images.to(device), labels.to(device)
                 optimizer.zero_grad()
                 outputs = self.model(images)
@@ -76,6 +59,24 @@ class ClientServer:
                 optimizer.step()
             scheduler.step()
 
+    def validate(self, val_loader, device="cpu"):
+        self.model.to(device)
+        self.model.eval()
+        criterion = nn.CrossEntropyLoss()
+        total_loss, total_samples, correct = 0.0, 0, 0
+
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = self.model(images)
+                loss = criterion(outputs, labels)
+                total_loss += loss.item() * labels.size(0)
+                total_samples += labels.size(0)
+                _, predicted = torch.max(outputs, 1)
+                correct += (predicted == labels).sum().item()
+
+        accuracy = 100 * correct / total_samples
+        return total_loss / total_samples, accuracy
 
     def get_model(self):
         return self.model
